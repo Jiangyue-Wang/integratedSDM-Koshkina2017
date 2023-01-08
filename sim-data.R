@@ -4,6 +4,8 @@
 ## Integrated Species Distribution Models: Combining presence-only data and presence-absence data with imperfect detection## Single indepandant covariate for each p and lambda.
 ## utility functions for the file POPA-functions
 ## 19/08/2016
+## modified by Jiangyue Wang
+## 08/01/2023
 ###################################################################################################
 require(raster)
 require(mvtnorm)
@@ -11,11 +13,11 @@ require(mvtnorm)
 
 source("functions.R")
 
-J.so = 3  #number of repeated surveys
-minrecipCondNum = 1e-6
-factor = 4
-beta.soram = c(log(8000), 0.5)
-alpha.soram = c(-1.0,-1.0) #po
+J.so = 3  # number of repeated surveys, refer to occasions in occupancy model
+minrecipCondNum = 1e-6 # unused in this data simulation
+factor = 4 # used for further aggregation of grids
+beta.soram = c(log(8000), 0.5) # beta coefficient for site occupancy data
+alpha.soram = c(-1.0,-1.0) # alpha coefficient for presence-background data
 alpha.so = c(0,-1.5) #probability of detection for repeated surveys
 
 # Define a rectangular region S
@@ -29,6 +31,7 @@ s.area =  (s.xmax-s.xmin)*(s.ymax-s.ymin)
 npixels.x = 1000
 npixels.y = 1000
 
+# Construct study region
 s = raster(ncol=npixels.x, nrow=npixels.y, xmn=s.xmin, xmx=s.xmax, ymn=s.ymin, ymx=s.ymax)
 s.loc = xyFromCell(s, 1:ncell(s))
 
@@ -103,15 +106,15 @@ maxlambda = max(values(s)[,'lambda'])
 #simulate point-process data --------------------------------------------------------------------
 
 # ... simulate point pattern of individuals over discretization of S
-N.hpp = rpois(1, maxlambda*s.area)
+N.hpp = rpois(1, maxlambda*s.area) # N.hpp individuals at most
 
-ind.hpp = sample(1:ncell(s), size=N.hpp, replace=FALSE)   #  sampling w/o replacement ensures only 1 indiv per pixel
+ind.hpp = sample(1:ncell(s), size=N.hpp, replace=FALSE)   #  sampling w/o replacement, for each individual ,which cell does it appear? ensures only 1 indiv per pixel
 loc.hpp = s.loc[ind.hpp, ]
 lambda.hpp = values(s)[,'lambda'][ind.hpp]
 
-ind.ipp = runif(N.hpp, 0,1) <= lambda.hpp/maxlambda
-N.ipp = sum(ind.ipp)
-loc.ipp = loc.hpp[ind.ipp, ]
+ind.ipp = (runif(N.hpp, 0,1) <= (lambda.hpp/maxlambda)) # each individual is present or not
+N.ipp = sum(ind.ipp) # How many individual is present
+loc.ipp = loc.hpp[ind.ipp, ] # present locations
 
 
 
@@ -123,13 +126,13 @@ y.ipp = rbinom(length(pTrue.ipp), size=1, prob=pTrue.ipp)
 
 #censoring of the po points --------------------------------------------------------------------------------
 #censoring 70 % of the po points
-y.ipp = ifelse(runif(length(y.ipp),0,1)<0.7,0,y.ipp)
+y.ipp = ifelse((runif(length(y.ipp),0,1)<0.7),0,y.ipp)
 
 
 # ----------------------------------------------------------------------------------------------------------
 
-ind.pb = (y.ipp == 1)
-loc.pb = loc.ipp[ind.pb, ]
+ind.pb = (y.ipp == 1) # detected or not in presence-only data
+loc.pb = loc.ipp[ind.pb, ] #detected locations in presence-only data
 
 
 # ... analyze simulated presence-only data
@@ -152,12 +155,12 @@ W.back = cbind(rep(1, ncell(sgrid)), sgrid.wcov)
 X.pb = X[ind.hpp[ind.ipp][ind.pb], ]  # thinned observations
 W.pb = W[ind.hpp[ind.ipp][ind.pb], ]  # thinned observations
 
-pb.occupancy=X.pb[,-1]
-pb.detection=W.pb[,-1]
+pb.occupancy=X.pb[,-1] #covariates that affect occupancy in presence-only process
+pb.detection=W.pb[,-1] #covariates that affect detection in presence-only process
 
 #simulate point-count data --------------------------------------------------------------------
 
-# .... first compute abundances within a sample frame
+# .... first compute presence/absence within a sample frame
 spop = dropLayer(s, c('lambda','pTrue'))
 temp = raster(spop)
 z = rep(0, ncell(spop))
@@ -206,7 +209,7 @@ wcov.so = values(sgrid)[,'w'][ind.so]
 so.occupancy=xcov.so
 
 
-# .... compute observed counts
+# .... compute observed counts(occupancy matrix)
 
 
 W.so = array(dim=c(n.so, J.so, 2))
